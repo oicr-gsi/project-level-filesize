@@ -1,9 +1,23 @@
 #!/usr/bin/perl
 # Script that given a list of dirs for non-SeqWare files, will generate a csv containing filesize information.
 # Also automatically gets similar data for SeqWare files from the file provenance report and stores them in the same csv file.
-
 # USAGE:
 # ./project-filesize-reporting.pl <file with list of directories> 
+
+=pod
+
+How this script works:
+This script pulls information from two places.
+For SeqWare files:
+	-uses file provenance report to get all projects
+For non-SeqWare files:
+	-uses input file (looks at their subdirectories of depth 1)
+Once it gets the appropriate information, this script will search the seqware database for corresponding file sizes and then combine them into a .csv file.
+
+If this is the first run, the .csv file created is called project-sizes.csv.
+If not then a .tmp csv file is created, so that the previous csv file can be used to calculate project/directory velocity
+
+=cut
 
 use strict;
 use warnings;
@@ -98,12 +112,12 @@ while (<$ALL_DIR_FH>) {
 	}
 	my $IFSPath = $_;
 	$IFSPath =~ s/.mounts/ifs/g;
-	$Quota =  `/oicr/local/sw/hpcquota/hpcquota-1.0.1/bin/hpcquota -d "$IFSPath" --no-header --units=GiB | sed 's/ \\+/\\t/g' | cut -f3`;
+	$Quota =  `/oicr/local/sw/hpcquota/hpcquota-1.0.1/bin/hpcquota -d "$IFSPath" --no-header --units=GiB 2>/dev/null | sed 's/ \\+/\\t/g' | cut -f3`;
 	chomp($Quota);
 	if ($Quota ne "") {
 		print $OUTPUT_FILE_FH "$DateRec,$_,$FileSizeSum,$Quota\n";
 	} else {
-		print $OUTPUT_FILE_FH "$DateRec,$_,$FileSizeSum,\n";
+		print $OUTPUT_FILE_FH "$DateRec,$_,$FileSizeSum,N/A\n";
 	}
 }
 
@@ -126,9 +140,9 @@ foreach (@projects) {
 		}
 	}
 	if ($_ eq "") {
-		print $OUTPUT_FILE_FH "$DateRec,Ungrouped,$FileSizeSum,\n";
+		print $OUTPUT_FILE_FH "$DateRec,Ungrouped,$FileSizeSum,N/A\n";
 	} else {
-		print $OUTPUT_FILE_FH "$DateRec,$_,$FileSizeSum,\n";
+		print $OUTPUT_FILE_FH "$DateRec,$_,$FileSizeSum,N/A\n";
 	}
 	$FileSizeSum = 0;
 	seek $FPR_FH, 0, 0;

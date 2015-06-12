@@ -1,9 +1,35 @@
 #!/usr/bin/perl
 
-# This script will generate HTML files for project-level filesize reporting.
+# This script will generate HTML files for project-level filesize reporting, and move them to the appropriate web url.
 # USAGE:
 # ./generateFileSizeWebPages.pl
 # This script expects you to run, in the same directory, the project-filesize-reporting.pl script.
+
+=pod
+
+How the script works:
+After running project-filesize-reporting.pl, you will have a csv file containing the SeqWare and all the given non-SeqWare projects/directories.
+That script will either produce project-sizes.csv or project-sizes.csv.tmp.
+
+For the first run of that script, you get the default csv file.  For the second run and beyond, you get the .tmp csv.  If the script finds a
+project-sizes.csv in the current directory, then it assumes that the script has been run before.  It then will create this .tmp csv file.
+
+This script will base the generated HTML files information off of the .tmp script (if one exists), and any velocity information is determined using
+the original and the .tmp csv.  Once this script is completed, the .tmp csv will be copied to the default one, and the .tmp will be removed.
+
+This script also uses the .tmp idea.  For the first run of this script, it will just be able to display the file size and quota information; it
+cannot display the velocity since it has nothing to compare sizes to.  The second time and beyond this script is run, it will store all the HTML files as
+.tmp files, and once completed will copy the .tmp files to the original HTML files.
+
+The HTML file content are created from template strings.
+There is two template HTML strings for the group page and individual lab pages.
+	-start of the HTML file, up until the rows of the table
+	-the remaining part of the HTML file, starting from the end of the table
+
+These two parts are almost identical between labs, it is the table row content that differentiates these.
+The row content is generated using the groups.yml file and the .csv file from the previous script.
+
+=cut
 
 use strict;
 use warnings;
@@ -20,10 +46,10 @@ if (! -e "project-sizes.csv"){
 }
 
 # Create HTML template files
-my $HTMLGroupTemplateStart = "<html lang=\"en\"><head><title>FileSize Reporting Overview</title><link href=\"bootstrap/css/bootstrap.min.css\" rel=\"stylesheet\"></head><body><div class=\"container-fluid\"><div class=\"row\"><div class=\"col-lg-10 col-lg-offset-1\"><h1>Group File Sizes</h1><ol class=\"breadcrumb\"><li class=\"active\">Groups</li></ol><table class=\"table table-hover\"><thead><tr><th>Group</th><th>Data Generation Velocity (GB/Day)</th></tr></thead>"; 
+my $HTMLGroupTemplateStart = "<html lang=\"en\"><head><title>FileSize Reporting Overview</title><link href=\"bootstrap/css/bootstrap.min.css\" rel=\"stylesheet\"></head><body><div class=\"container-fluid\"><div class=\"row\"><div class=\"col-lg-10 col-lg-offset-1\"><div class=\"page-header\"><h1>Group File Sizes</h1></div><ol class=\"breadcrumb\"><li class=\"active\">Groups</li></ol><table class=\"table table-hover\"><thead><tr><th>Group</th><th>Data Generation Velocity (GB/Day)</th></tr></thead>"; 
 my $HTMLGroupTemplateEnd = "</table></div></div></div><script src=\"https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js\"></script><script src=\"js/bootstrap.min.js\"></script></body></html>";
 
-my $HTMLSingleTemplateStart = "<html lang=\"en\"><head><title>FileSize Reporting Overview</title><link href=\"bootstrap/css/bootstrap.min.css\" rel=\"stylesheet\"></head><body><div class=\"container-fluid\"><div class=\"row\"><div class=\"col-lg-10 col-lg-offset-1\"><h1>LABNAME File Sizes</h1><ol class=\"breadcrumb\"><li><a href=\"groups-size.html\">Groups</a></li><li class=\"active\">LABNAME</li></ol><table class=\"table table-hover\"><thead><tr><th>Project/Directory</th><th>Size (GB)</th><th>Data Generation Velocity (GB/Day)</th><th>Quota (GB)</th></thead></tr>"; 
+my $HTMLSingleTemplateStart = "<html lang=\"en\"><head><title>FileSize Reporting Overview</title><link href=\"bootstrap/css/bootstrap.min.css\" rel=\"stylesheet\"></head><body><div class=\"container-fluid\"><div class=\"row\"><div class=\"col-lg-10 col-lg-offset-1\"><div class=\"page-header\"><h1>LABNAME File Sizes</h1></div><ol class=\"breadcrumb\"><li><a href=\"groups-size.html\">Groups</a></li><li class=\"active\">LABNAME</li></ol><table class=\"table table-hover\"><thead><tr><th>Project/Directory</th><th>Size (GB)</th><th>Data Generation Velocity (GB/Day)</th><th>Quota (GB)</th></thead></tr>"; 
 my $HTMLSingleTemplateEnd = "</table></div></div></div><script src=\"https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js\"></script><script src=\"js/bootstrap.min.js\"></script></body></html>";
 
 my $HTMLGroupCenter = ""; # Will become the rows of the table for the Group page
@@ -32,9 +58,10 @@ my $HTMLSingleCenter = ""; # Will become the rows of each table for a specific l
 # Open and store YAML file
 open my $YAML_FH, '<', $yaml or die "can't open config file '$yaml'";
 my $config = LoadFile($YAML_FH);
+
+# Setup for global variables
 my $lab_output = "size.html"; 
 my $default_lab_output = "size.html"; # Used only when the script has been run before
-
 my $ProjectCSV = "project-sizes.csv"; # CSV file with dir size information
 my $PreviousRun = 0; # 0 => no previous run, 1 => a previous run exists
 my $GroupSizeSum = 0; # Directory size of a specific group/lab
@@ -42,13 +69,14 @@ my $OldFileSizeSum = 0; # Previous subdirectory size for a specific group/lab
 my $OldGroupSizeSum = 0; # Previous directory size of a specific group/lab
 
 # Function for converting a value in bytes to gb
+# Pre: a size in bytes
+# Post: a size in GB
 sub bytes_to_gb {
 	my $value = `units -- '$_[0] bytes' 'gigabytes' | head -1 | cut -f2 -d' '`;
 	chomp($value);
 	return $value;
 }
 
-# Create separate files based on lab
 # If this is not the first run of the script, .tmp is used on the new files which are created based on the most recent information in the database.
 # They are compared with the previous project-sizes.csv file to determine data generation velocity
 if (-e "project-sizes.csv.tmp") {
@@ -97,20 +125,19 @@ while ( my ($k1, $v1) = each %$config) {
 				if ($FilePath eq $a) {
 					$GroupSizeSum += $FileSizeSum;
 
-					# If no Quota information set to N/A
-					if ($Quota eq "") {
-						$Quota = "N/A";
-					}
-
 					# Add rows to Lab HTML page
-					if ($PreviousRun == 1){
-						my $NewFileCount = `grep "$a" "$k1-size.html" | wc -l`;
-						if ($NewFileCount == 0) {
-                                                        $HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . bytes_to_gb($FileSizeSum) . "</td><td>N/A</td><td>" . $Quota . "</td></tr>"; 
-						} elsif ($FileSizeSum - $OldFileSizeSum > 0) {
-							$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . bytes_to_gb($FileSizeSum) . "</td><td>+" . bytes_to_gb($FileSizeSum - $OldFileSizeSum) . "</td><td>" . $Quota . "</td></tr>";
-						} else {
-							$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . bytes_to_gb($FileSizeSum) . "</td><td>" . bytes_to_gb($FileSizeSum - $OldFileSizeSum) . "</td><td>" . $Quota . "</td></tr>";
+					if ($PreviousRun == 1){ # If not the first run of the script
+						if (-e "$k1-size.html") { # If group/lab exists in the previous run
+							my $NewFileCount = `grep "$a" "$k1-size.html" | wc -l`; # Checks if Project/Dir is new to this run
+							if ($NewFileCount == 0) {
+                                                	        $HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . bytes_to_gb($FileSizeSum) . "</td><td>N/A</td><td>" . $Quota . "</td></tr>"; 
+							} elsif ($FileSizeSum - $OldFileSizeSum > 0) {
+								$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . bytes_to_gb($FileSizeSum) . "</td><td>+" . bytes_to_gb($FileSizeSum - $OldFileSizeSum) . "</td><td>" . $Quota . "</td></tr>";
+							} else {
+								$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . bytes_to_gb($FileSizeSum) . "</td><td>" . bytes_to_gb($FileSizeSum - $OldFileSizeSum) . "</td><td>" . $Quota . "</td></tr>";
+							}
+						} else { # If group/lab has just been added to YAML file
+							$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . bytes_to_gb($FileSizeSum) . "</td><td>N/A</td><td>" . $Quota . "</td></tr>";
 						}
 					} else {
 						$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . bytes_to_gb($FileSizeSum) . "</td><td>N/A</td><td>" . $Quota . "</td></tr>";
@@ -130,16 +157,20 @@ while ( my ($k1, $v1) = each %$config) {
 
 	# If this is not the first run of the script, then copy our .tmp files to the correct location
 	if ($PreviousRun == 1){
-		`cat "$k1-$lab_output" > "$k1-$default_lab_output"`;
-		`rm "$k1-$lab_output"`;
+		if (! -e "$k1-size.html") { # If group/lab has just been added to YAML file
+			`cat "$k1-$lab_output" > "$k1-$default_lab_output"`;
+                        `rm "$k1-$lab_output"`;
+			$HTMLGroupCenter = "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>N/A</td></tr>";
+		} else { # Group/lab has existed in previous runs
+			`cat "$k1-$lab_output" > "$k1-$default_lab_output"`;
+			`rm "$k1-$lab_output"`;
 
-		
-		if ($GroupSizeSum - $OldGroupSizeSum > 0){
-			$HTMLGroupCenter = "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>+" . bytes_to_gb($GroupSizeSum - $OldGroupSizeSum) . "</td></tr>";
-		} else {
-			$HTMLGroupCenter = "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>" . bytes_to_gb($GroupSizeSum - $OldGroupSizeSum) . "</td></tr>";
+			if ($GroupSizeSum - $OldGroupSizeSum > 0){
+				$HTMLGroupCenter = "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>+" . bytes_to_gb($GroupSizeSum - $OldGroupSizeSum) . "</td></tr>";
+			} else {
+				$HTMLGroupCenter = "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>" . bytes_to_gb($GroupSizeSum - $OldGroupSizeSum) . "</td></tr>";
+			}
 		}
-		
 	} else {
 		$HTMLGroupCenter = "<tr><td><a href=\"$k1-$lab_output\">" . $k1 . "</a></td><td>N/A</td></tr>";
 	}
