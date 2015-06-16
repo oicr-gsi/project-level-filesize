@@ -1,0 +1,161 @@
+'Stein-Lab':
+    Seqware:
+        - Ungrouped
+        - PCSI
+        - FAP
+        - CRISPRSequencing
+        - CelegansDNA
+        - CelegansRNA
+        - CelegansWGS
+        - EsophagealAdenocarcinoma
+        - OvarianCancerInVitro
+        - Moffat_Pancreatic_Cell_Line
+    Non-Seqware:
+        - "/.mounts/labs/prod/archive/projects/steinlab"
+'Boutros-Lab':
+    Seqware:
+        - CPC-GENE
+        - TumorHetNeuroblastoma
+        - DREAM
+        - LungCancerMing
+        - ToxinResistantRat
+    Non-Seqware:
+        - "/.mounts/labs/prod/archive/projects/boutroslab"
+'Gallinger-Lab':
+    Seqware:
+        - FAP
+        - SteveGallingerEarlyCRCAshton
+        - SteveGallingerEarlyOnsetCRC
+        - FamilialPancreaticSequencing
+        - FamilialColonCancer
+        - CRC
+'Hudson-Lab':
+    Seqware:
+        - HALT
+    Non-Seqware:
+        - "/.mounts/labs/prod/archive/projects/hudsonlab"
+'Bartlett-Lab':
+    Seqware:
+        - BartlettTS
+        - BreastHetCellLine
+        - DCIS
+        - MCNT
+        - IDP
+    Non-Seqware:
+        - "/.mounts/labs/prod/archive/projects/bartlettlab"
+'McPherson-TechDev':
+    Seqware:
+        - CancerPanelTesting
+        - Agilent_Kit_Test
+        - DirectionalRNATesting
+        - IlluminaWTDirectionalSeqTest
+        - JCK
+        - JLES
+        - MatePairTest
+        - NeoPrepTesting
+        - PancreaticCellLineSequencing
+        - RDBR
+        - SMARTerlowRNAkit
+        - MATCH
+        - ABvsInvitrogenReagentComp
+        - RNAAmplificationTest
+        - WGA_test
+        - miRNASeq_Optimization
+        - ValentinaLowInputTest
+        - Phils_Fishing_Expedition
+        - AndrewsOneoffExperiments
+        - LCMTesting
+        - CellularityMixingExperiment
+        - LibInputOptimization
+        - HaloPlex
+        - EPICT
+        - McPherson
+    Non-Seqware:
+        - "/.mounts/labs/prod/archive/projects/mcphersonlab"
+'McPherson-Lab':
+    Seqware:
+        - LungCancerMedBioGene
+        - FamilialCancerStudy
+        - Rapid_Autopsy_Metastatic_Panc
+        - AshPC
+        - PrimaryHumanLung
+        - AcuteMyeloidLeukemiaInRemiss
+        - extracellularRNA
+        - PreAML
+        - Liposarcoma_Sequencing
+        - ICGCBenchmarking
+        - YousefRenalLiver
+        - "Catherine_O'Brien_Bug"
+        - OsteosacromaTumourInitiating
+        - DownSyndromeLeukemia
+        - Ovarian_Brain_Colon_Exome_Seq
+        - LernerElisTargetedSequencing
+        - POP_CURE
+        - TorontoLungCancerResequencing
+        - DifferentialmicroRNAexpression
+        - PBMR1
+        - AdrenocorticalCancer
+        - StemCellRNA-seq
+        - CoringStudy
+        - HinerfeldWT
+        - SBTransposonPool
+        - ICGCPancreaticCancerSeq
+        - PancCoculture
+        - MindenTranslocationSeq
+        - BasalLikeBreastCancer
+        - OvarianCaXeno
+        - Hedley
+        - Breast_Cancer_Recurrence
+'Dick-Lab':
+    Seqware:
+        - SingleCellSeq
+        - DynamicsChemoResponse
+'Dancey-Lab':
+    Seqware:
+        - JDRT
+        - JanetDanceyRareTumour
+'Batada-Lab':
+    Seqware:
+        - LiverCholestasis
+        - Genome_Fragility
+        - Origins
+        - NHEJ
+        - IPSCellLineReprogramming
+        - Progeria
+        - Fanc
+        - DIA2_Yeast
+        - CLB
+        - Genome_Fragility
+'Unknown':
+    Seqware:
+        - Study Title
+'Muthuswamy-Lab':
+    Seqware:
+        - PtMutRenalAgenesis
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'Ungrouped':
+    SeqWare:
+        - Ungrouped

@@ -49,7 +49,7 @@ if (-e $AllDirs) {
 
 # File Provenance report is used to get data on SW files
 print "Grabbing File Provenance Report and extracting data...\n";
-`find /.mounts/labs/seqprodbio/private/backups/hsqwprod-db/ -regextype sed -regex ".*seqware_files_report.*" | sort -r | head -1 | xargs zcat | cut -f2,49| tail -n +2 | sort -s -k 1,1 > "FileProvReport.tsv"`;
+`find /.mounts/labs/seqprodbio/private/backups/hsqwprod-db/ -regextype sed -regex ".*seqware_files_report.*gz" | sort -r | head -1 | xargs zcat | cut -f2,49| tail -n +2 | sort -s -k 1,1 > "FileProvReport.tsv"`;
 
 # Temp FPR
 my $FPR = `pwd`;
@@ -100,13 +100,14 @@ open my $ALL_DIR_FH, "<", $AllDirs or die "Can't read file '$AllDirs'\n";
 open my $OUTPUT_FILE_FH, ">", $OutputFile or die "Can't create file '$OutputFile'\n";
 my $FileSizeSum = 0;
 
-print $OUTPUT_FILE_FH "Date Recorded,File Path,File Size Sum,Quota\n";
+print $OUTPUT_FILE_FH "Date Recorded,File Path,File Size Sum (Bytes),Quota (GB)\n";
 while (<$ALL_DIR_FH>) {
 	chomp($_);
 	$FileSizeSum = 0;
-	my $sql = "SELECT file_size FROM reporting.file WHERE file_path LIKE ?";
+	my $sql = 'SELECT file_size FROM reporting.file WHERE file_path LIKE ?';
 	my $sth = $dbh->prepare($sql);
-	$sth->execute('%'.$_.'%');
+	print "$_\n";
+	$sth->execute($_ . "%");
 	while (my @row = $sth->fetchrow_array) {
 		$FileSizeSum = $FileSizeSum + $row[0];
 	}
