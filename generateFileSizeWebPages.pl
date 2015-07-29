@@ -2,7 +2,7 @@
 
 # This script will generate HTML files for project-level filesize reporting, and move them to the appropriate web url.
 # USAGE:
-# ./generateFileSizeWebPages.pl
+# ./generateFileSizeWebPages.pl <yaml>
 # This script expects you to run, in the same directory, the project-filesize-reporting.pl script.
 
 =pod
@@ -29,6 +29,8 @@ There is two template HTML strings for the group page and individual lab pages.
 These two parts are almost identical between labs, it is the table row content that differentiates these.
 The row content is generated using the groups.yml file and the .csv file from the previous script.
 
+Just think of .tmp data being the new data.
+
 =cut
 
 use strict;
@@ -49,10 +51,10 @@ my $GeneratedTime = `date`;
 chomp($GeneratedTime);
 
 # Create HTML template files
-my $HTMLGroupTemplateStart = "<html lang=\"en\"><head><title>FileSize Reporting Overview</title><link href=\"bootstrap/css/bootstrap.min.css\" rel=\"stylesheet\"><link href=\"dataTables.bootstrap.css\" rel=\"stylesheet\"></head><body><div class=\"container-fluid\"><div class=\"row\"><div class=\"col-lg-10 col-lg-offset-1\"><div class=\"page-header\"><h1>Group File Sizes</h1></div><ol class=\"breadcrumb\"><li class=\"active\">Groups</li></ol><table id=\"group_table\" class=\"table table-hover\"><thead><tr><th>Group</th><th>Data Generation Velocity (GB/Day)</th></tr></thead><tbody>"; 
+my $HTMLGroupTemplateStart = "<html lang=\"en\"><head><title>FileSize Reporting Overview</title><link href=\"bootstrap/css/bootstrap.min.css\" rel=\"stylesheet\"><link href=\"dataTables.bootstrap.css\" rel=\"stylesheet\"></head><body><div class=\"container-fluid\"><div class=\"row\"><div class=\"col-lg-10 col-lg-offset-1\"><div class=\"page-header\"><h1>Group File Sizes</h1></div><ol class=\"breadcrumb\"><li class=\"active\">Groups</li></ol><h3>Total Size (GB) : TOTAL_SIZE</h3><table id=\"group_table\" class=\"table table-hover\"><thead><tr><th>Group</th><th>Data Generation Velocity (GB/Day)</th></tr></thead><tbody>"; 
 my $HTMLGroupTemplateEnd = "</tbody></table><p>Last updated $GeneratedTime</p></div></div></div><script src=\"https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js\"></script><script src=\"js/bootstrap.min.js\"></script><script type=\"text/javascript\" charset=\"utf8\" src=\"DataTables-1.10.7/media/js/jquery.dataTables.js\"></script><script type=\"text/javascript\" src=\"dataTables.bootstrap.js\"></script><script>\$(document).ready( function () { \$('#group_table').DataTable({paging:false, searching:false, info:false});});</script></body></html>";
 
-my $HTMLSingleTemplateStart = "<html lang=\"en\"><head><title>FileSize Reporting Overview</title><link href=\"bootstrap/css/bootstrap.min.css\" rel=\"stylesheet\"><link href=\"dataTables.bootstrap.css\" rel=\"stylesheet\"></head><body><div class=\"container-fluid\"><div class=\"row\"><div class=\"col-lg-10 col-lg-offset-1\"><div class=\"page-header\"><h1>LABNAME File Sizes</h1></div><ol class=\"breadcrumb\"><li><a href=\"groups-size.html\">Groups</a></li><li class=\"active\">LABNAME</li></ol><table id=\"single_table\" class=\"table table-hover\"><thead><tr><th>Project/Directory</th><th>Size (GB)</th><th>Data Generation Velocity (GB/Day)</th><th>Quota (GB)</th></thead></tr><tbody>"; 
+my $HTMLSingleTemplateStart = "<html lang=\"en\"><head><title>FileSize Reporting Overview</title><link href=\"bootstrap/css/bootstrap.min.css\" rel=\"stylesheet\"><link href=\"dataTables.bootstrap.css\" rel=\"stylesheet\"></head><body><div class=\"container-fluid\"><div class=\"row\"><div class=\"col-lg-10 col-lg-offset-1\"><div class=\"page-header\"><h1>LABNAME File Sizes</h1></div><ol class=\"breadcrumb\"><li><a href=\"groups-size.html\">Groups</a></li><li class=\"active\">LABNAME</li></ol><h3>Total Size (GB) : TOTAL_SIZE</h3><table id=\"single_table\" class=\"table table-hover\"><thead><tr><th>Project/Directory</th><th>Size (GB)</th><th>Data Generation Velocity (GB/Day)</th><th>Quota (GB)</th></thead></tr><tbody>"; 
 my $HTMLSingleTemplateEnd = "</tbody></table><p>Last updated $GeneratedTime</p></div></div></div><script src=\"https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js\"></script><script src=\"js/bootstrap.min.js\"></script><script type=\"text/javascript\" charset=\"utf8\" src=\"DataTables-1.10.7/media/js/jquery.dataTables.js\"></script><script type=\"text/javascript\" src=\"dataTables.bootstrap.js\"></script><script>\$(document).ready( function () { \$('#single_table').DataTable({paging:false, searching:false, info:false});});</script></body></html>";
 
 my $HTMLGroupCenter = ""; # Will become the rows of the table for the Group page
@@ -71,6 +73,7 @@ my $PreviousRun = 0; # 0 => no previous run, 1 => a previous run exists
 my $GroupSizeSum = 0; # Directory size of a specific group/lab
 my $OldFileSizeSum = 0; # Previous subdirectory size for a specific group/lab
 my $OldGroupSizeSum = 0; # Previous directory size of a specific group/lab
+my $AllGroupSizeSum = 0; # Total size of all dirs
 
 # Function for converting a value in bytes to gb
 # Pre: a size in bytes
@@ -92,9 +95,6 @@ if (-e "project-sizes.csv.tmp") {
 # Open file which will become the Groups HTML page
 open my $GROUP_FH, '>', "groups-$lab_output" or die "can't write to 'group-$lab_output'";
 
-# Print top portion of Group HTML page to appropriate file
-print $GROUP_FH $HTMLGroupTemplateStart;
-
 # Iterate through YAML file
 while ( my ($k1, $v1) = each %$config) {
 	$GroupSizeSum = 0;
@@ -107,7 +107,6 @@ while ( my ($k1, $v1) = each %$config) {
 	# Print top portion of Lab HTML page to appropriate file
 	my $HTMLLab = $HTMLSingleTemplateStart;
 	$HTMLLab =~ s/LABNAME/$k1/g;
-        print $SINGLE_FH $HTMLLab;
 
 	# Iterate through SeqWare and Non-SeqWare Projects/Directories
 	while (my ($k2, $v2) = each %$v1 ){
@@ -148,13 +147,22 @@ while ( my ($k1, $v1) = each %$config) {
 					}
 
 					# Print middle portion of Lab HTML page to appropriate file
-					print $SINGLE_FH $HTMLSingleCenter;
-					$HTMLSingleCenter = "";
+				#	print $SINGLE_FH $HTMLSingleCenter;
+				#	$HTMLSingleCenter = "";
 				}
 			}
 			close($PROJECT_SIZES_FH);
 		}
+
 	}
+
+	$GroupSizeSum = bytes_to_gb($GroupSizeSum);
+	$AllGroupSizeSum += $GroupSizeSum;
+	$HTMLLab =~ s/TOTAL_SIZE/$GroupSizeSum/g;
+        print $SINGLE_FH $HTMLLab;
+        print $SINGLE_FH $HTMLSingleCenter;
+        $HTMLSingleCenter = ""; 
+
 	# Print bottom portion of Lab HTML page to appropriate file
 	print $SINGLE_FH $HTMLSingleTemplateEnd;
 	close($SINGLE_FH);
@@ -164,24 +172,31 @@ while ( my ($k1, $v1) = each %$config) {
 		if (! -e "$output_dir/$k1-size.html") { # If group/lab has just been added to YAML file
 			`cat "$k1-$lab_output" > "$k1-$default_lab_output"`;
                         `rm "$k1-$lab_output"`;
-			$HTMLGroupCenter = "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>N/A</td></tr>";
+			$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>N/A</td></tr>";
 		} else { # Group/lab has existed in previous runs
 			`cat "$k1-$lab_output" > "$k1-$default_lab_output"`;
 			`rm "$k1-$lab_output"`;
 
 			if ($GroupSizeSum - $OldGroupSizeSum > 0){ # if positive Group Size Sum
-				$HTMLGroupCenter = "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>+" . bytes_to_gb($GroupSizeSum - $OldGroupSizeSum) . "</td></tr>";
+				$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>+" . bytes_to_gb($GroupSizeSum - $OldGroupSizeSum) . "</td></tr>";
 			} else { # If negative Group Size Sum
-				$HTMLGroupCenter = "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>" . bytes_to_gb($GroupSizeSum - $OldGroupSizeSum) . "</td></tr>";
+				$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$default_lab_output\">" . $k1 . "</a></td><td>" . bytes_to_gb($GroupSizeSum - $OldGroupSizeSum) . "</td></tr>";
 			}
 		}
 	} else {
-		$HTMLGroupCenter = "<tr><td><a href=\"$k1-$lab_output\">" . $k1 . "</a></td><td>N/A</td></tr>";
+		$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$lab_output\">" . $k1 . "</a></td><td>N/A</td></tr>";
 	}
 	
 	# Print middle portion of Group HTML page to appropriate file
-	print $GROUP_FH $HTMLGroupCenter;
+#	print $GROUP_FH $HTMLGroupCenter;
+
 }
+# Print top portion of Group HTML page to appropriate file
+$HTMLGroupTemplateStart =~ s/TOTAL_SIZE/$AllGroupSizeSum/g;
+print $GROUP_FH $HTMLGroupTemplateStart;
+
+# Print middle portion of Group HTML page to appropriate file
+print $GROUP_FH $HTMLGroupCenter;
 
 # Print bottom portion of Group HTML page to appropriate file
 print $GROUP_FH $HTMLGroupTemplateEnd;
