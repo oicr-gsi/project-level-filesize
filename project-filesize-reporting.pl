@@ -3,14 +3,12 @@
 ############################################################################################################################################################
 # project-filesize-reporting.pl
 #
-# Created By: Andrew Duncan
-# Last Updated: 07/31/15
 #
 # Overview: This script creates a csv file containing the disk usage and quota information for all OICR labs non-seqware and seqware files.
 # Parameters: A file containing all of the non-seqware directories whose disk usage information need to be generated.
 #
 # Usage:
-# ./project-filesize-reporting.pl <file with list of directories>
+# ./project-filesize-reporting.pl <Working Dir> <Script Dir>
 #
 # Then run generateFileSizeWebPages.pl.
 #
@@ -25,7 +23,7 @@ How this script works:
 4. Find the disk usage of all projects (SeqWare) in the file table in the SeqWare DB, append to csv from 3.
 
 A few useful points:
--The format of the CSV file is Date Recorded,File Path,File Size Sum (Bytes),Quota (GB)
+-The format of the CSV file is Date Recorded,File Path,File Size Sum (Bytes),Quota (TB)
 -If this is not the first run of the script, a tmp csv file is made since the old one is needed for ./generateFileSizeWebPages.pl to calculate data generation velocity
 -Set up db connection with .pgpass and pg_config files (Google for more details)
 
@@ -35,14 +33,17 @@ use strict;
 use warnings;
 use DBI;
 
+my $WorkingDir = $ARGV[0];
+my $ScriptDir = $ARGV[1];
+chomp($WorkingDir);
+chomp($ScriptDir);
+
 # Connect to database
-my $path = `pwd`;
-chomp($path);
-$ENV{PGSYSCONFDIR} = $path;
+$ENV{PGSYSCONFDIR} = $ScriptDir;
 my $dbh = DBI->connect("dbi:Pg:service=prod", undef, undef, { AutoCommit => 1 }) or die "Can't connect to the database: $DBI::errstr\n";
 
 # Setup input
-my $InputPath = shift @ARGV;
+my $InputPath = "$ScriptDir/NonSeqWare_Labs.txt";
 unless (-e $InputPath)  {       die "Cannot find input location: '$InputPath'\n";       }
 
 # Get Current Date
@@ -52,21 +53,21 @@ chomp($DateRec);
 my $Quota = "";
 
 # AllDirs.file stores all directories that we are calculating size for non-SW files
-my $AllDirs = "AllDirs.file";
+my $AllDirs = "$WorkingDir/AllDirs.file";
 
 if (-e $AllDirs) {
 	`rm $AllDirs`;
 }
 
 # Stores columns 2 (Study Title) and 49 (File Size) from the File Provenance Report (FPR)
-my $FPR = "FileProvReport.tsv";
+my $FPR = "$WorkingDir/FileProvReport.tsv";
 
 # File Provenance report is used to get data on SW files
 print "Grabbing File Provenance Report and extracting data.\n";
 `find /.mounts/labs/seqprodbio/private/backups/hsqwprod-db/ -regextype sed -regex ".*seqware_files_report.*gz" | sort -r | head -1 | xargs zcat | cut -f2,49| tail -n +2 | sort -s -k 1,1 > $FPR`;
 
 # Project List which stores a list of all projects 
-my $ProjectFile = "ProjectList.file";
+my $ProjectFile = "$WorkingDir/ProjectList.file";
 
 # Make an array of all the different projects
 print "Determining all projects.\n";
@@ -98,10 +99,10 @@ close ($INPUT_FILE_FH);
 
 # If this script has been run before, we can generate Data Generation Velocity
 my $OutputFile;
-if (-e "project-sizes.csv"){
-	$OutputFile = "project-sizes.csv.tmp";
+if (-e "$WorkingDir/project-sizes.csv"){
+	$OutputFile = "$WorkingDir/project-sizes.csv.tmp";
 } else {
-	$OutputFile = "project-sizes.csv";
+	$OutputFile = "$WorkingDir/project-sizes.csv";
 }
 
 print "Calculating directory sizes of non-SeqWare Files.\n";
@@ -112,7 +113,7 @@ open my $OUTPUT_FILE_FH, ">", $OutputFile or die "Can't create file '$OutputFile
 my $FileSizeSum = 0; # Total size of all files in a directory
 
 # Print header of output file
-print $OUTPUT_FILE_FH "Date Recorded,File Path,File Size Sum (Bytes),Quota (GB)\n";
+print $OUTPUT_FILE_FH "Date Recorded,File Path,File Size Sum (Bytes),Quota (TB)\n";
 
 # Calculate disk usage for non-seqware directories
 while (<$ALL_DIR_FH>) {

@@ -8,7 +8,7 @@
 # 	     and can be found at http://www-pde.hpc.oicr.on.ca/filesize_reports/groups-size.html
 #
 # Usage:
-# ./generateFileSizeWebPages.pl <yaml>
+# ./generateFileSizeWebPages.pl <WorkingDir> <ScriptDir>
 #
 ####################################################################################################################################################################################
 =pod
@@ -44,15 +44,20 @@ use Math::Round;
 my $NumberOfInputs = @ARGV;
 
 # Check that the correct number of inputs are supplied
-if ( $NumberOfInputs != 1 ) {
-        die "You have entered $NumberOfInputs argument(s).  This script require 1 argument to run.\n";
+if ( $NumberOfInputs != 2 ) {
+        die "You have entered $NumberOfInputs argument(s).  This script require 2 arguments to run.\n";
 }
 
+my $WorkingDir = $ARGV[0];
+my $ScriptDir = $ARGV[1];
+chomp($WorkingDir);
+chomp($ScriptDir);
+
 # YAML file with group information
-my $yaml = shift @ARGV;
+my $yaml = "$ScriptDir/groups.yml";
 
 # Make sure appropriate file exists
-if (! -e "project-sizes.csv"){
+if (! -e "$WorkingDir/project-sizes.csv"){
 	print "Requires project-sizes.csv file.  Please run project-filesize-reporting.pl before running this script.\n";
 	exit;
 }
@@ -80,7 +85,7 @@ my $config = LoadFile($YAML_FH);
 my $HTMLSuffix = "size.html"; 
 my $OutputDir = "/.mounts/labs/PDE/web/filesize_reports";
 my $DefaultHTMLSuffix = "size.html"; # Used only when the script has been run before
-my $ProjectCSV = "project-sizes.csv"; # CSV file with dir size information
+my $ProjectCSV = "$WorkingDir/project-sizes.csv"; # CSV file with dir size information
 my $PreviousRun = 0; # 0 => no previous run, 1 => a previous run exists
 my $LabDiskUsage = 0; # Disk usage of a specific group/lab
 my $OldProjectDiskUsage = 0; # Previous disk usage for a specific group/lab
@@ -89,14 +94,14 @@ my $TotalDiskUsage = 0; # Total disk usage of all labs
 
 # If this is not the first run of the script, .tmp is used on the new files which are created based on the most recent information in the database.
 # They are compared with the previous project-sizes.csv file to determine data generation velocity
-if (-e "project-sizes.csv.tmp") {
+if (-e "$WorkingDir/project-sizes.csv.tmp") {
 	$HTMLSuffix .= ".tmp";
 	$PreviousRun = 1;
 	$ProjectCSV .= ".tmp";
 }
 
 # Open file which will become the Groups HTML page
-open my $GROUP_FH, '>', "groups-$HTMLSuffix" or die "can't write to 'group-$HTMLSuffix'";
+open my $GROUP_FH, '>', "$WorkingDir/groups-$HTMLSuffix" or die "can't write to '$WorkingDir/group-$HTMLSuffix'";
 
 # Iterate through YAML file
 while ( my ($k1, $v1) = each %$config) {
@@ -105,7 +110,7 @@ while ( my ($k1, $v1) = each %$config) {
 	print "$k1\n";
 
 	# Open a file which will become a specific Lab HTML page
-	open my $SINGLE_FH, '>', "$k1-$HTMLSuffix" or die "can't write to '$k1-$HTMLSuffix'";
+	open my $SINGLE_FH, '>', "$WorkingDir/$k1-$HTMLSuffix" or die "can't write to '$WorkingDir/$k1-$HTMLSuffix'";
 
 	# Setup top portion of Lab HTML page
 	my $HTMLLab = $HTMLSingleTemplateStart;
@@ -119,7 +124,7 @@ while ( my ($k1, $v1) = each %$config) {
 			
 			# Get old file size sum for a given dir/project
 			if ($PreviousRun == 1) {
-				$OldProjectDiskUsage =  `grep -w "$a" "project-sizes.csv" | cut -f3 -d','`;
+				$OldProjectDiskUsage =  `grep -w "$a" "$WorkingDir/project-sizes.csv" | cut -f3 -d','`;
 				if ($OldProjectDiskUsage ne "") {
 					$OldLabDiskUsage += $OldProjectDiskUsage;
 				}
@@ -170,12 +175,12 @@ while ( my ($k1, $v1) = each %$config) {
 	# If this is not the first run of the script, then copy our .tmp files to the correct location
 	if ($PreviousRun == 1){
 		if (! -e "$OutputDir/$k1-size.html") { # If group/lab has just been added to YAML file
-			`cat "$k1-$HTMLSuffix" > "$k1-$DefaultHTMLSuffix"`;
-                        `rm "$k1-$HTMLSuffix"`;
+			`cat "$WorkingDir/$k1-$HTMLSuffix" > "$WorkingDir/$k1-$DefaultHTMLSuffix"`;
+                        `rm "$WorkingDir/$k1-$HTMLSuffix"`;
 			$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$DefaultHTMLSuffix\">" . $k1 . "</a></td><td>" . $PrettyLabDiskUsage . "</td><td>N/A</td></tr>";
 		} else { # Group/lab has existed in previous runs
-			`cat "$k1-$HTMLSuffix" > "$k1-$DefaultHTMLSuffix"`;
-			`rm "$k1-$HTMLSuffix"`;
+			`cat "$WorkingDir/$k1-$HTMLSuffix" > "$WorkingDir/$k1-$DefaultHTMLSuffix"`;
+			`rm "$WorkingDir/$k1-$HTMLSuffix"`;
 
 			if ($LabDiskUsage - $OldLabDiskUsage > 0){ # if positive Group Size Sum
 				$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$DefaultHTMLSuffix\">" . $k1 . "</a></td><td>" . $PrettyLabDiskUsage . "</td><td>+" . commify(bytes_to_gb($LabDiskUsage - $OldLabDiskUsage)) . "</td></tr>";
@@ -204,19 +209,19 @@ close ($YAML_FH);
 
 # If this is not the first run of the script, then copy our .tmp files to the correct location
 if ($PreviousRun == 1) {
-	`cat "groups-$HTMLSuffix" > "groups-$DefaultHTMLSuffix"`;
-	`rm "groups-$HTMLSuffix"`;
-	`cat "$ProjectCSV" > "project-sizes.csv"`;
+	`cat "$WorkingDir/groups-$HTMLSuffix" > "$WorkingDir/groups-$DefaultHTMLSuffix"`;
+	`rm "$WorkingDir/groups-$HTMLSuffix"`;
+	`cat "$ProjectCSV" > "$WorkingDir/project-sizes.csv"`;
 	`rm "$ProjectCSV"`;
 }
 
 # Move files to web and set permissions
 `rm $OutputDir/*html`;
-`cp *.html $OutputDir`;
+`cp $WorkingDir/*.html $OutputDir`;
 `chmod 754 $OutputDir/*.html`;
 
 # Clean up
-`rm *.html`;
+`rm $WorkingDir/*.html`;
 
 # Show script runtime
 print "Script completed in ";
