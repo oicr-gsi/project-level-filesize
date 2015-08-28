@@ -1,22 +1,33 @@
 #!/usr/bin/perl
-# Script that given a list of dirs for non-SeqWare files, will generate a csv containing filesize information.
-# Also automatically gets similar data for SeqWare files from the file provenance report and stores them in the same csv file.
-# USAGE:
-# ./project-filesize-reporting.pl <file with list of directories> 
+
+############################################################################################################################################################
+# project-filesize-reporting.pl
+#
+# Created By: Andrew Duncan
+# Last Updated: 07/31/15
+#
+# Overview: This script creates a csv file containing the disk usage and quota information for all OICR labs non-seqware and seqware files.
+# Parameters: A file containing all of the non-seqware directories whose disk usage information need to be generated.
+#
+# Usage:
+# ./project-filesize-reporting.pl <file with list of directories>
+#
+# Then run generateFileSizeWebPages.pl.
+#
+############################################################################################################################################################
 
 =pod
 
 How this script works:
-This script pulls information from three places.
-For SeqWare files:
-	-uses file provenance report to get all projects
-For non-SeqWare files:
-	-uses input file (looks at their subdirectories of depth 1)
-For both:
-	-once it gets the appropriate information, this script will search the seqware database for corresponding file sizes and then combine them into a .csv file.
+1. Get a list of all projects (ProjectList.file) from the file provenance report
+2. Get all dirs  to have disk usage calculated for (AllDirs.file).  Based on input file, will find all children dirs of given dirs (maxdepth 1)
+3. Find the disk usage of all dirs (Non-SeqWare) found in step 2 from the reporting.file table in the SeqWare DB, save to a CSV
+4. Find the disk usage of all projects (SeqWare) in the file table in the SeqWare DB, append to csv from 3.
 
-If this is the first run, the .csv file created is called project-sizes.csv.
-If not then a .tmp csv file is created, so that the previous csv file can be used to calculate project/directory velocity
+A few useful points:
+-The format of the CSV file is Date Recorded,File Path,File Size Sum (Bytes),Quota (GB)
+-If this is not the first run of the script, a tmp csv file is made since the old one is needed for ./generateFileSizeWebPages.pl to calculate data generation velocity
+-Set up db connection with .pgpass and pg_config files (Google for more details)
 
 =cut
 
@@ -42,16 +53,17 @@ my $Quota = "";
 
 # AllDirs.file stores all directories that we are calculating size for non-SW files
 my $AllDirs = "AllDirs.file";
+
 if (-e $AllDirs) {
 	`rm $AllDirs`;
 }
 
 # Stores columns 2 (Study Title) and 49 (File Size) from the File Provenance Report (FPR)
-my $FPR = "/FileProvReport.tsv";
+my $FPR = "FileProvReport.tsv";
 
 # File Provenance report is used to get data on SW files
 print "Grabbing File Provenance Report and extracting data.\n";
-#`find /.mounts/labs/seqprodbio/private/backups/hsqwprod-db/ -regextype sed -regex ".*seqware_files_report.*gz" | sort -r | head -1 | xargs zcat | cut -f2,49| tail -n +2 | sort -s -k 1,1 > $FPR`;
+`find /.mounts/labs/seqprodbio/private/backups/hsqwprod-db/ -regextype sed -regex ".*seqware_files_report.*gz" | sort -r | head -1 | xargs zcat | cut -f2,49| tail -n +2 | sort -s -k 1,1 > $FPR`;
 
 # Project List which stores a list of all projects 
 my $ProjectFile = "ProjectList.file";
@@ -60,8 +72,10 @@ my $ProjectFile = "ProjectList.file";
 print "Determining all projects.\n";
 my @projects;
 
+# Grab list of projects from the FPR
 `cut -f1 $FPR | sort | uniq > $ProjectFile`;
 
+# Store Projects into an array
 open my $PROJECT_FH, "<", $ProjectFile or die "Can't read file '$ProjectFile'\n";
 
 while (<$PROJECT_FH>){
@@ -100,6 +114,7 @@ my $FileSizeSum = 0; # Total size of all files in a directory
 # Print header of output file
 print $OUTPUT_FILE_FH "Date Recorded,File Path,File Size Sum (Bytes),Quota (GB)\n";
 
+# Calculate disk usage for non-seqware directories
 while (<$ALL_DIR_FH>) {
 	chomp($_);
 
@@ -131,7 +146,7 @@ while (<$ALL_DIR_FH>) {
 close ($ALL_DIR_FH);
 $FileSizeSum = 0; # Now total size of all files related to the given project
 
-# Calculate file size sum of projects for SW and store to file
+# Calculate disk usage of projects for SW and store to file
 print "Calculating directory sizes of SeqWare Projects.\n";
 
 open my $FPR_FH, "<", $FPR or die "Can't read file '$FPR'\n";

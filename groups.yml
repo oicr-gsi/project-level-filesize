@@ -126,36 +126,9 @@
         - DIA2_Yeast
         - CLB
         - Genome_Fragility
-'Unknown':
-    Seqware:
-        - Study Title
 'Muthuswamy-Lab':
     Seqware:
         - PtMutRenalAgenesis
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 'Ungrouped':
     SeqWare:
         - Ungrouped
