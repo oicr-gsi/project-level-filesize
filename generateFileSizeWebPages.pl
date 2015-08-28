@@ -136,22 +136,23 @@ while ( my ($k1, $v1) = each %$config) {
 				my ($DateRecorded, $FilePath, $ProjectDiskUsage, $Quota) = split (',', $line);
 				if ($FilePath eq $a) {
 					$LabDiskUsage += $ProjectDiskUsage;
+
 					# Add rows to Lab HTML page
 					if ($PreviousRun == 1){ # If not the first run of the script
 						if (-e "$OutputDir/$k1-size.html") { # If group/lab exists in the previous run
 							my $NewFileCount = `grep -w "$a" "$OutputDir/$k1-size.html" | wc -l`; # Checks if Project/Dir is new to this run
 							if ($NewFileCount == 0) {
-                                                	        $HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_gb($ProjectDiskUsage)) . "</td><td>N/A</td><td>" . $Quota . "</td></tr>"; 
+                                                	        $HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_tb($ProjectDiskUsage)) . "</td><td>N/A</td><td>" . commify($Quota) . "</td></tr>"; 
 							} elsif ($ProjectDiskUsage - $OldProjectDiskUsage > 0) { # If positive File Size Sum
-								$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_gb($ProjectDiskUsage)) . "</td><td>+" . commify(bytes_to_gb($ProjectDiskUsage - $OldProjectDiskUsage)) . "</td><td>" . $Quota . "</td></tr>";
+								$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_tb($ProjectDiskUsage)) . "</td><td>+" . commify(bytes_to_tb($ProjectDiskUsage - $OldProjectDiskUsage)) . "</td><td>" . commify($Quota) . "</td></tr>";
 							} else { # If negative File Size Sum
-								$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_gb($ProjectDiskUsage)) . "</td><td>" . commify(bytes_to_gb($ProjectDiskUsage - $OldProjectDiskUsage)) . "</td><td>" . $Quota . "</td></tr>";
+								$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_tb($ProjectDiskUsage)) . "</td><td>" . commify(bytes_to_tb($ProjectDiskUsage - $OldProjectDiskUsage)) . "</td><td>" . commify($Quota) . "</td></tr>";
 							}
 						} else { # If group/lab has just been added to YAML file
-							$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_gb($ProjectDiskUsage)) . "</td><td>N/A</td><td>" . $Quota . "</td></tr>";
+							$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_tb($ProjectDiskUsage)) . "</td><td>N/A</td><td>" . commify($Quota) . "</td></tr>";
 						}
 					} else {
-						$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_gb($ProjectDiskUsage)) . "</td><td>N/A</td><td>" . $Quota . "</td></tr>";
+						$HTMLSingleCenter .= "<tr><td>" . $FilePath . "</td><td>" . commify(bytes_to_tb($ProjectDiskUsage)) . "</td><td>N/A</td><td>" . commify($Quota) . "</td></tr>";
 					}
 
 				}
@@ -162,7 +163,7 @@ while ( my ($k1, $v1) = each %$config) {
 	}
 
 	$TotalDiskUsage += $LabDiskUsage;
-	my $PrettyLabDiskUsage = commify(bytes_to_gb($LabDiskUsage));
+	my $PrettyLabDiskUsage = commify(bytes_to_tb($LabDiskUsage));
 	$HTMLLab =~ s/TOTAL_SIZE/$PrettyLabDiskUsage/g;
         print $SINGLE_FH $HTMLLab;
         print $SINGLE_FH $HTMLSingleCenter;
@@ -183,9 +184,9 @@ while ( my ($k1, $v1) = each %$config) {
 			`rm "$WorkingDir/$k1-$HTMLSuffix"`;
 
 			if ($LabDiskUsage - $OldLabDiskUsage > 0){ # if positive Group Size Sum
-				$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$DefaultHTMLSuffix\">" . $k1 . "</a></td><td>" . $PrettyLabDiskUsage . "</td><td>+" . commify(bytes_to_gb($LabDiskUsage - $OldLabDiskUsage)) . "</td></tr>";
+				$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$DefaultHTMLSuffix\">" . $k1 . "</a></td><td>" . $PrettyLabDiskUsage . "</td><td>+" . commify(bytes_to_tb($LabDiskUsage - $OldLabDiskUsage)) . "</td></tr>";
 			} else { # If negative Group Size Sum
-				$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$DefaultHTMLSuffix\">" . $k1 . "</a></td><td>" . $PrettyLabDiskUsage . "</td><td>" . commify(bytes_to_gb($LabDiskUsage - $OldLabDiskUsage)) . "</td></tr>";
+				$HTMLGroupCenter .= "<tr><td><a href=\"$k1-$DefaultHTMLSuffix\">" . $k1 . "</a></td><td>" . $PrettyLabDiskUsage . "</td><td>" . commify(bytes_to_tb($LabDiskUsage - $OldLabDiskUsage)) . "</td></tr>";
 			}
 		}
 	} else {
@@ -195,7 +196,7 @@ while ( my ($k1, $v1) = each %$config) {
 
 }
 # Print top portion of Group HTML page to appropriate file
-$TotalDiskUsage = commify(bytes_to_gb($TotalDiskUsage));
+$TotalDiskUsage = commify(bytes_to_tb($TotalDiskUsage));
 $HTMLGroupTemplateStart =~ s/TOTAL_SIZE/$TotalDiskUsage/g;
 print $GROUP_FH $HTMLGroupTemplateStart;
 
@@ -238,11 +239,14 @@ print " seconds\n";
 # Function for converting a value in bytes to TB
 # Pre: a size in bytes
 # Post: a size in TB
-sub bytes_to_gb {
-#       my $value = `units -- '$_[0] bytes' 'gigabytes' | head -1 | cut -f2 -d' '`;
-#       chomp($value);
-#       return $value;
+sub bytes_to_tb {
+	# Uncommenting code below will put ~0.01 anytime the size is under 0.01 TB. 
+	# This breaks sorting though
+#	if (abs $_[0] < 10995116277 and abs $_[0] != 0){
+#		return "~0.01";
+#	}
         return nearest(.01,$_[0]/(1024*1024*1024*1024));
+	
 }
 
 # from Andrew Johnson <ajohnson@gpu.srv.ualberta.ca>
