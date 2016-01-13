@@ -4,26 +4,20 @@
 # generateFileSizeWebPages.pl
 #
 #
-# Overview:  Takes output from the project-filesize-reporting.pl script and generates HTML files to display the data.  The output goes to /.mounts/labs/PDE/web/filesize_reports
-# 	     and can be found at http://www-pde.hpc.oicr.on.ca/filesize_reports/groups-size.html
+# Overview:  Takes two calculate_project_file_size.sh output files as input and generates HTML files to display the data.
+#            The project config.yaml file is used to format the report html page.
 #
 # Usage:
-# ./generateFileSizeWebPages.pl <WorkingDir> <ScriptDir>
+# ./generateFileSizeWebPages.pl current_project_file_sizes.csv previous_project_file_sizes.csv config.yaml output_dir
 #
 ####################################################################################################################################################################################
 
 =pod
 
 How the script works:
-After running project-filesize-reporting.pl, you will have a csv file containing the SeqWare and all the given non-SeqWare projects/directories.
-That script will either produce project-sizes.csv or project-sizes.csv.tmp.
+After running calculate_project_file_size.sh, you will have a csv file containing all the project file sizes.
 
-For the first run of that script (project-filesize-reporting.pl), you get the non-tmp csv file.  For the second run and beyond, you get the .tmp csv.  If the script finds a
-project-sizes.csv in the current directory, then it assumes that the script has been run before.  It then will create this .tmp csv file.
-
-This script also uses the .tmp idea.  For the first run of this script, it will just be able to display the file size and quota information; it
-cannot display the velocity since it has nothing to compare sizes to.  The second time and beyond this script is run, it will have both a project-sizes.csv and project-sizes.csv.tmp.
-Since it has both files, it can properly determine the data generation velocity.
+The previous project file sizes csv is used to calculate data generation velocity.
 
 The HTML file content are created from template strings.
 There is two template HTML strings for the group page and individual lab pages.
@@ -33,37 +27,77 @@ There is two template HTML strings for the group page and individual lab pages.
 These two parts are almost identical between labs, it is the table row content that differentiates these.
 The row content is generated using the groups.yml file and the .csv file from the previous script.
 
+Required perl libraries:
+libyaml-perl
+libmath-round-perl
+
 =cut
 
 use strict;
 use warnings;
-use DBI;
 use YAML qw(LoadFile);
+use Text::CSV;
 use Math::Round;
 
 # Check the number of inputs
 my $NumberOfInputs = @ARGV;
 
 # Check that the correct number of inputs are supplied
-if ( $NumberOfInputs != 2 ) {
+if ( $NumberOfInputs != 5 ) {
     die
-"You have entered $NumberOfInputs argument(s).  This script require 2 arguments to run.\n";
+"You have entered $NumberOfInputs argument(s).  This script require 5 arguments to run.\n";
 }
 
-my $WorkingDir = $ARGV[0];
-my $ScriptDir  = $ARGV[1];
+my $CurrentData  = $ARGV[0];
+my $PreviousData = $ARGV[1];
+my $yaml         = $ARGV[2];
+my $WorkingDir   = $ARGV[3];
+my $OutputDir    = $ARGV[4];
+chomp($CurrentData);
+chomp($PreviousData);
+chomp($yaml);
 chomp($WorkingDir);
-chomp($ScriptDir);
-
-# YAML file with group information
-my $yaml = "$ScriptDir/groups.yml";
+chomp($OutputDir);
 
 # Make sure appropriate file exists
-if ( !-e "$WorkingDir/project-sizes.csv" ) {
-    print
-"Requires project-sizes.csv file.  Please run project-filesize-reporting.pl before running this script.\n";
+if ( !-e $CurrentData ) {
+    print "current project level sizes csv file.\n";
     exit;
 }
+
+# Make sure appropriate file exists
+if ( !-e $PreviousData ) {
+    print "previous project level sizes csv file not accessible.\n";
+    exit;
+}
+
+if ( !-e $yaml ) {
+    print "config.yaml file not accessible.\n";
+    exit;
+}
+
+if ( !-e $WorkingDir && !-d $WorkingDir && !dir_is_empty($WorkingDir) ) {
+    print "working dir not accessible or not empty.\n";
+    exit;
+}
+
+if ( !-e $OutputDir && !-d $OutputDir ) {
+    print "output dir not accessible.\n";
+    exit;
+}
+
+if ( $OutputDir eq $WorkingDir ) {
+    print "output dir and working dir must be different.\n";
+    exit;
+}
+
+#load data
+my %current  = load_project_size_csv($CurrentData);
+my %previous = load_project_size_csv($PreviousData);
+
+open my $YAML_FH, '<', $yaml or die "can't open config file '$yaml'";
+my $config = LoadFile($YAML_FH);
+close($YAML_FH);
 
 my $GeneratedTime = `date`;
 chomp($GeneratedTime);
@@ -86,30 +120,13 @@ my $HTMLGroupCenter = ""; # Will become the rows of the table for the Group page
 my $HTMLSingleCenter =
   "";    # Will become the rows of each table for a specific lab page
 
-# Open and store YAML file
-open my $YAML_FH, '<', $yaml or die "can't open config file '$yaml'";
-my $config = LoadFile($YAML_FH);
-
 # Setup for more global variables
-my $HTMLSuffix = "size.html";
-my $OutputDir  = "/.mounts/labs/PDE/web/filesize_reports";
-my $DefaultHTMLSuffix =
-  "size.html";    # Used only when the script has been run before
-my $ProjectCSV =
-  "$WorkingDir/project-sizes.csv";    # CSV file with dir size information
-my $PreviousRun         = 0;  # 0 => no previous run, 1 => a previous run exists
-my $LabDiskUsage        = 0;  # Disk usage of a specific group/lab
-my $OldProjectDiskUsage = 0;  # Previous disk usage for a specific group/lab
-my $OldLabDiskUsage     = 0;  # Previous disk usage of a specific group/lab
-my $TotalDiskUsage      = 0;  # Total disk usage of all labs
+my $HTMLSuffix   = "size.html";
+my $LabDiskUsage = 0;             # Disk usage of a specific group/lab
 
-# If this is not the first run of the script, .tmp is used on the new files which are created based on the most recent information in the database.
-# They are compared with the previous project-sizes.csv file to determine data generation velocity
-if ( -e "$WorkingDir/project-sizes.csv.tmp" ) {
-    $HTMLSuffix .= ".tmp";
-    $PreviousRun = 1;
-    $ProjectCSV .= ".tmp";
-}
+#my $OldProjectDiskUsage = 0;      # Previous disk usage for a specific group/lab
+my $OldLabDiskUsage = 0;          # Previous disk usage of a specific group/lab
+my $TotalDiskUsage  = 0;          # Total disk usage of all labs
 
 # Open file which will become the Groups HTML page
 open my $GROUP_FH, '>', "$WorkingDir/groups-$HTMLSuffix"
@@ -132,110 +149,57 @@ while ( my ( $k1, $v1 ) = each %$config ) {
     # Iterate through SeqWare and Non-SeqWare Projects/Directories
     while ( my ( $k2, $v2 ) = each %$v1 ) {
         foreach $a (@$v2) {
+            my $Project = $a;
 
-            # Open file containing filesize information
-            open my $PROJECT_SIZES_FH, '<', $ProjectCSV
-              or die "can't read from '$ProjectCSV'\n";
-
-            # Get old file size sum for a given dir/project
-            if ( $PreviousRun == 1 ) {
-                $OldProjectDiskUsage =
-`grep -w "$a" "$WorkingDir/project-sizes.csv" | cut -f3 -d','`;
-                if ( $OldProjectDiskUsage ne "" ) {
-                    $OldLabDiskUsage += $OldProjectDiskUsage;
-                }
+            # Get old file size sum for a given project
+            my $OldProjectDiskUsage = $previous{$a}{size};
+            if ( defined $OldProjectDiskUsage && $OldProjectDiskUsage ne "" ) {
+                $OldLabDiskUsage += $OldProjectDiskUsage;
+            }
+            else {
+                print "$a is not present in previous\n";
             }
 
-            # Iterate through csv file
-            while ( my $line = <$PROJECT_SIZES_FH> ) {
-                chomp($line);
-                my ( $DateRecorded, $FilePath, $ProjectDiskUsage, $Quota ) =
-                  split( ',', $line );
-                if ( $FilePath eq $a ) {
-                    $LabDiskUsage += $ProjectDiskUsage;
-
-                    # Add rows to Lab HTML page
-                    if ( $PreviousRun == 1 )
-                    {    # If not the first run of the script
-                        if ( -e "$OutputDir/$k1-size.html" )
-                        {    # If group/lab exists in the previous run
-                            my $NewFileCount =
-                              `grep -w "$a" "$OutputDir/$k1-size.html" | wc -l`
-                              ;    # Checks if Project/Dir is new to this run
-                            if ( $NewFileCount == 0 ) {
-                                $HTMLSingleCenter .=
-                                    "<tr><td>"
-                                  . $FilePath
-                                  . "</td><td>"
-                                  . commify( bytes_to_tb($ProjectDiskUsage) )
-                                  . "</td><td>N/A</td><td>"
-                                  . commify($Quota)
-                                  . "</td></tr>";
-                            }
-                            elsif (
-                                $ProjectDiskUsage - $OldProjectDiskUsage > 0 )
-                            {    # If positive File Size Sum
-                                $HTMLSingleCenter .=
-                                    "<tr><td>"
-                                  . $FilePath
-                                  . "</td><td>"
-                                  . commify( bytes_to_tb($ProjectDiskUsage) )
-                                  . "</td><td>+"
-                                  . commify(
-                                    bytes_to_tb(
-                                        $ProjectDiskUsage -
-                                          $OldProjectDiskUsage
-                                    )
-                                  )
-                                  . "</td><td>"
-                                  . commify($Quota)
-                                  . "</td></tr>";
-                            }
-                            else {    # If negative File Size Sum
-                                $HTMLSingleCenter .=
-                                    "<tr><td>"
-                                  . $FilePath
-                                  . "</td><td>"
-                                  . commify( bytes_to_tb($ProjectDiskUsage) )
-                                  . "</td><td>"
-                                  . commify(
-                                    bytes_to_tb(
-                                        $ProjectDiskUsage -
-                                          $OldProjectDiskUsage
-                                    )
-                                  )
-                                  . "</td><td>"
-                                  . commify($Quota)
-                                  . "</td></tr>";
-                            }
-                        }
-                        else {   # If group/lab has just been added to YAML file
-                            $HTMLSingleCenter .=
-                                "<tr><td>"
-                              . $FilePath
-                              . "</td><td>"
-                              . commify( bytes_to_tb($ProjectDiskUsage) )
-                              . "</td><td>N/A</td><td>"
-                              . commify($Quota)
-                              . "</td></tr>";
-                        }
-                    }
-                    else {
-                        $HTMLSingleCenter .=
-                            "<tr><td>"
-                          . $FilePath
-                          . "</td><td>"
-                          . commify( bytes_to_tb($ProjectDiskUsage) )
-                          . "</td><td>N/A</td><td>"
-                          . commify($Quota)
-                          . "</td></tr>";
-                    }
-
-                }
+            # Get current file size sum for a given project
+            my $ProjectDiskUsage = $current{$a}{size};
+            my $ReportProjectDiskUsage;
+            if ( defined $ProjectDiskUsage && $ProjectDiskUsage ne "" ) {
+                $LabDiskUsage += $ProjectDiskUsage;
+                $ReportProjectDiskUsage =
+                  commify( bytes_to_tb($ProjectDiskUsage) );
             }
-            close($PROJECT_SIZES_FH);
+            else {
+                $ReportProjectDiskUsage = "N/A";
+                print "$a is not present in current\n";
+            }
+
+            my $ReportVelocity;
+            if ( defined $OldProjectDiskUsage && defined $ProjectDiskUsage ) {
+                $ReportVelocity =
+                  commify(
+                    bytes_to_tb( $ProjectDiskUsage - $OldProjectDiskUsage ) );
+            }
+            else {
+                $ReportVelocity = "N/A";
+            }
+
+            my $Quota = $current{$a}{quota};
+            my $ReportQuota;
+            if ( defined $Quota ) {
+                $ReportQuota = commify($Quota);
+            }
+            else {
+                $ReportQuota = "N/A";
+            }
+
+            # Add rows to Lab HTML page
+            $HTMLSingleCenter .=
+                "<tr>" . "<td>"
+              . $a . "</td>" . "<td>"
+              . $ReportProjectDiskUsage . "</td>" . "<td>"
+              . $ReportVelocity . "</td>" . "<td>"
+              . $ReportQuota . "</td>" . "</tr>";
         }
-
     }
 
     $TotalDiskUsage += $LabDiskUsage;
@@ -249,55 +213,14 @@ while ( my ( $k1, $v1 ) = each %$config ) {
     print $SINGLE_FH $HTMLSingleTemplateEnd;
     close($SINGLE_FH);
 
-# If this is not the first run of the script, then copy our .tmp files to the correct location
-    if ( $PreviousRun == 1 ) {
-        if ( !-e "$OutputDir/$k1-size.html" )
-        {    # If group/lab has just been added to YAML file
-`cat "$WorkingDir/$k1-$HTMLSuffix" > "$WorkingDir/$k1-$DefaultHTMLSuffix"`;
-            `rm "$WorkingDir/$k1-$HTMLSuffix"`;
-            $HTMLGroupCenter .=
-                "<tr><td><a href=\"$k1-$DefaultHTMLSuffix\">"
-              . $k1
-              . "</a></td><td>"
-              . $PrettyLabDiskUsage
-              . "</td><td>N/A</td></tr>";
-        }
-        else {    # Group/lab has existed in previous runs
-`cat "$WorkingDir/$k1-$HTMLSuffix" > "$WorkingDir/$k1-$DefaultHTMLSuffix"`;
-            `rm "$WorkingDir/$k1-$HTMLSuffix"`;
-
-            if ( $LabDiskUsage - $OldLabDiskUsage > 0 )
-            {     # if positive Group Size Sum
-                $HTMLGroupCenter .=
-                    "<tr><td><a href=\"$k1-$DefaultHTMLSuffix\">"
-                  . $k1
-                  . "</a></td><td>"
-                  . $PrettyLabDiskUsage
-                  . "</td><td>+"
-                  . commify( bytes_to_tb( $LabDiskUsage - $OldLabDiskUsage ) )
-                  . "</td></tr>";
-            }
-            else {    # If negative Group Size Sum
-                $HTMLGroupCenter .=
-                    "<tr><td><a href=\"$k1-$DefaultHTMLSuffix\">"
-                  . $k1
-                  . "</a></td><td>"
-                  . $PrettyLabDiskUsage
-                  . "</td><td>"
-                  . commify( bytes_to_tb( $LabDiskUsage - $OldLabDiskUsage ) )
-                  . "</td></tr>";
-            }
-        }
-    }
-    else {
-        $HTMLGroupCenter .=
-            "<tr><td><a href=\"$k1-$HTMLSuffix\">"
-          . $k1
-          . "</a></td><td>"
-          . $PrettyLabDiskUsage
-          . "</td><td>N/A</td></tr>";
-    }
-
+    $HTMLGroupCenter .=
+        "<tr>"
+      . "<td><a href=\"$k1-$HTMLSuffix\">"
+      . $k1
+      . "</a></td>" . "<td>"
+      . $PrettyLabDiskUsage . "</td>" . "<td>"
+      . commify( bytes_to_tb( $LabDiskUsage - $OldLabDiskUsage ) )
+      . "</td> " . "</tr>";
 }
 
 # Print top portion of Group HTML page to appropriate file
@@ -311,15 +234,6 @@ print $GROUP_FH $HTMLGroupCenter;
 # Print bottom portion of Group HTML page to appropriate file
 print $GROUP_FH $HTMLGroupTemplateEnd;
 close($GROUP_FH);
-close($YAML_FH);
-
-# If this is not the first run of the script, then copy our .tmp files to the correct location
-if ( $PreviousRun == 1 ) {
-`cat "$WorkingDir/groups-$HTMLSuffix" > "$WorkingDir/groups-$DefaultHTMLSuffix"`;
-    `rm "$WorkingDir/groups-$HTMLSuffix"`;
-    `cat "$ProjectCSV" > "$WorkingDir/project-sizes.csv"`;
-    `rm "$ProjectCSV"`;
-}
 
 # Move files to web and set permissions
 `rm $OutputDir/*html`;
@@ -361,3 +275,18 @@ sub commify {
     return reverse $input;
 }
 
+sub load_project_size_csv {
+    open my $FH, '<', $_[0] or die "can't open file '$_[0]'";
+    my %data;
+    while ( my $line = <$FH> ) {
+        my ( $DateRecorded, $Project, $ProjectDiskUsage, $Quota ) = split ",",
+          $line;
+        $data{$Project}{'size'}  = $ProjectDiskUsage;
+        $data{$Project}{'quota'} = $Quota;
+    }
+    close($FH);
+    return %data;
+}
+
+#http://rosettacode.org/wiki/Empty_directory#Perl
+sub dir_is_empty { !<$_[0]/*> }
